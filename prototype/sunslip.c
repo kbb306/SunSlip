@@ -278,6 +278,37 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         }
         return (0);
 
+    case M_IOCTL: {
+        struct iocblk *ioc;
+
+        if ((mp->b_wptr - mp->b_rptr) < sizeof (struct iocblk)) {
+            cmn_err(CE_NOTE, "sunslip0: short M_IOCTL");
+            freemsg(mp);
+            return (0);
+        }
+
+        ioc = (struct iocblk *)mp->b_rptr;
+        cmn_err(CE_NOTE, "sunslip0: M_IOCTL cmd=0x%lx count=%ld",
+            (unsigned long)ioc->ioc_cmd, (long)ioc->ioc_count);
+
+        /*
+         * Do not silently drop unknown ioctls.  STREAMS requires a
+         * bottom-level driver to ACK or NAK them; dropping one can leave
+         * the caller blocked waiting forever.  For now NAK and log the
+         * command so we can implement any ioctl Solaris IP actually needs.
+         */
+        mp->b_datap->db_type = M_IOCNAK;
+        ioc->ioc_error = EINVAL;
+        ioc->ioc_rval = -1;
+        ioc->ioc_count = 0;
+        if (mp->b_cont != NULL) {
+            freemsg(mp->b_cont);
+            mp->b_cont = NULL;
+        }
+        qreply(q, mp);
+        return (0);
+    }
+
     case M_PROTO:
     case M_PCPROTO:
         if ((mp->b_wptr - mp->b_rptr) < sizeof (t_uscalar_t)) {
@@ -317,6 +348,8 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         return (0);
 
     default:
+        cmn_err(CE_NOTE, "sunslip0: unexpected STREAMS message type 0x%x",
+            (unsigned int)mp->b_datap->db_type);
         freemsg(mp);
         return (0);
     }
