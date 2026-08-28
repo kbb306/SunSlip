@@ -6,7 +6,7 @@ LD=/usr/ccs/bin/ld
 # Keep optimization conservative for the first prototype build.
 KFLAGS=-D_KERNEL -xarch=v9
 
-all: sunslip sunslipattach dltest
+all: sunslip sunslipattach dltest iocvalues
 
 sunslip: sunslip.o
 	$(LD) -r -o sunslip sunslip.o
@@ -20,5 +20,8 @@ sunslipattach: sunslipattach.c
 dltest: dltest.c
 	$(CC) -O -o dltest dltest.c
 
+iocvalues: iocvalues.c
+	$(CC) -O -o iocvalues iocvalues.c
+
 clean:
-	rm -f sunslip.o sunslip sunslipattach dltest
+	rm -f sunslip.o sunslip sunslipattach dltest iocvalues
