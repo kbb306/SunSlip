@@ -37,6 +37,7 @@
  * into this compilation context.
  */
 #define SUNSLIP_SIOCGTUNPARAM  0x40506993U
+#define SUNSLIP_IOC_SELFTEST    0x53534c54U  /* "SSLT" */
 
 #define SL_END             0xc0
 #define SL_ESC             0xdb
@@ -80,9 +81,12 @@ static void sunslip_phys_addr(queue_t *, mblk_t *);
 static void sunslip_ok_ack(queue_t *, mblk_t *, t_uscalar_t);
 static void sunslip_error_ack(queue_t *, mblk_t *, t_uscalar_t,
     t_uscalar_t, t_uscalar_t);
+static mblk_t *sunslip_encode(mblk_t *);
 static int sunslip_xmit(sunslip_state_t *, mblk_t *);
+static int sunslip_decode_byte(sunslip_state_t *, unsigned char, mblk_t **);
 static void sunslip_rx_byte(sunslip_state_t *, unsigned char);
-static void sunslip_rx_frame(sunslip_state_t *);
+static void sunslip_rx_frame(sunslip_state_t *, mblk_t *);
+static int sunslip_codec_selftest(void);
 
 static struct module_info sunslip_dl_minfo = {
     0x5344, "sunslipd", 0, INFPSZ, SUNSLIP_HIWAT, SUNSLIP_LOWAT
@@ -296,6 +300,24 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         }
 
         ioc = (struct iocblk *)mp->b_rptr;
+
+        if ((unsigned int)ioc->ioc_cmd == SUNSLIP_IOC_SELFTEST) {
+            int ok = sunslip_codec_selftest();
+
+            if (mp->b_cont != NULL) {
+                freemsg(mp->b_cont);
+                mp->b_cont = NULL;
+            }
+            mp->b_datap->db_type = ok ? M_IOCACK : M_IOCNAK;
+            ioc->ioc_error = ok ? 0 : EIO;
+            ioc->ioc_rval = ok ? 0 : -1;
+            ioc->ioc_count = 0;
+            cmn_err(CE_NOTE, "sunslip0: RFC1055 codec self-test %s",
+                ok ? "PASS" : "FAIL");
+            qreply(q, mp);
+            return (0);
+        }
+
         cmn_err(CE_NOTE,
             "sunslip0: M_IOCTL cmd=0x%lx id=%u flag=0x%x model=0x%x count=0x%lx cont=%ld",
             (unsigned long)(unsigned int)ioc->ioc_cmd,
@@ -592,12 +614,46 @@ sunslip_error_ack(queue_t *q, mblk_t *mp, t_uscalar_t prim,
     qreply(q, mp);
 }
 
-static int
-sunslip_xmit(sunslip_state_t *sl, mblk_t *mp)
+static mblk_t *
+sunslip_encode(mblk_t *data)
 {
     mblk_t *bp, *out;
     size_t len;
     unsigned char c;
+
+    len = msgdsize(data);
+    if (len > SUNSLIP_MTU)
+        return (NULL);
+
+    out = allocb((int)(2 * len + 1), BPRI_MED);
+    if (out == NULL)
+        return (NULL);
+    out->b_datap->db_type = M_DATA;
+
+    for (bp = data; bp != NULL; bp = bp->b_cont) {
+        unsigned char *p;
+        for (p = bp->b_rptr; p < bp->b_wptr; ++p) {
+            c = *p;
+            if (c == SL_END) {
+                *out->b_wptr++ = SL_ESC;
+                *out->b_wptr++ = SL_ESC_END;
+            } else if (c == SL_ESC) {
+                *out->b_wptr++ = SL_ESC;
+                *out->b_wptr++ = SL_ESC_ESC;
+            } else {
+                *out->b_wptr++ = c;
+            }
+        }
+    }
+    *out->b_wptr++ = SL_END;
+    return (out);
+}
+
+static int
+sunslip_xmit(sunslip_state_t *sl, mblk_t *mp)
+{
+    mblk_t *out;
+    size_t len;
 
     if (sl->tty_rq == NULL) {
         sl->oerrors++;
@@ -614,27 +670,9 @@ sunslip_xmit(sunslip_state_t *sl, mblk_t *mp)
         return (1);
     }
 
-    out = allocb((int)(2 * len + 1), BPRI_MED);
+    out = sunslip_encode(mp->b_cont);
     if (out == NULL)
         return (0);
-    out->b_datap->db_type = M_DATA;
-
-    for (bp = mp->b_cont; bp != NULL; bp = bp->b_cont) {
-        unsigned char *p;
-        for (p = bp->b_rptr; p < bp->b_wptr; ++p) {
-            c = *p;
-            if (c == SL_END) {
-                *out->b_wptr++ = SL_ESC;
-                *out->b_wptr++ = SL_ESC_END;
-            } else if (c == SL_ESC) {
-                *out->b_wptr++ = SL_ESC;
-                *out->b_wptr++ = SL_ESC_ESC;
-            } else {
-                *out->b_wptr++ = c;
-            }
-        }
-    }
-    *out->b_wptr++ = SL_END;
 
     sl->opackets++;
     putnext(WR(sl->tty_rq), out);
@@ -717,9 +755,11 @@ sunslip_trput(queue_t *q, mblk_t *mp)
     return (0);
 }
 
-static void
-sunslip_rx_byte(sunslip_state_t *sl, unsigned char c)
+static int
+sunslip_decode_byte(sunslip_state_t *sl, unsigned char c, mblk_t **framep)
 {
+    *framep = NULL;
+
     if (c == SL_END) {
         if (sl->rx_overflow) {
             if (sl->rx_mp != NULL) {
@@ -728,16 +768,26 @@ sunslip_rx_byte(sunslip_state_t *sl, unsigned char c)
             }
             sl->rx_overflow = 0;
             sl->escaped = 0;
-            return;
+            return (0);
         }
-        sunslip_rx_frame(sl);
+        if (sl->rx_mp != NULL &&
+            sl->rx_mp->b_wptr != sl->rx_mp->b_rptr) {
+            *framep = sl->rx_mp;
+            sl->rx_mp = NULL;
+            sl->escaped = 0;
+            return (1);
+        }
+        if (sl->rx_mp != NULL) {
+            freemsg(sl->rx_mp);
+            sl->rx_mp = NULL;
+        }
         sl->escaped = 0;
-        return;
+        return (0);
     }
 
     if (c == SL_ESC) {
         sl->escaped = 1;
-        return;
+        return (0);
     }
 
     if (sl->escaped) {
@@ -749,14 +799,14 @@ sunslip_rx_byte(sunslip_state_t *sl, unsigned char c)
     }
 
     if (sl->rx_overflow)
-        return;
+        return (0);
 
     if (sl->rx_mp == NULL) {
         sl->rx_mp = allocb(SUNSLIP_MTU, BPRI_MED);
         if (sl->rx_mp == NULL) {
             sl->ierrors++;
             sl->rx_overflow = 1;
-            return;
+            return (0);
         }
         sl->rx_mp->b_datap->db_type = M_DATA;
     }
@@ -764,24 +814,26 @@ sunslip_rx_byte(sunslip_state_t *sl, unsigned char c)
     if (sl->rx_mp->b_wptr >= sl->rx_mp->b_datap->db_lim) {
         sl->ierrors++;
         sl->rx_overflow = 1;
-        return;
+        return (0);
     }
     *sl->rx_mp->b_wptr++ = c;
+    return (0);
 }
 
 static void
-sunslip_rx_frame(sunslip_state_t *sl)
+sunslip_rx_byte(sunslip_state_t *sl, unsigned char c)
 {
-    mblk_t *data, *proto;
-    dl_unitdata_ind_t *ind;
+    mblk_t *data;
 
-    data = sl->rx_mp;
-    sl->rx_mp = NULL;
-    if (data == NULL || data->b_wptr == data->b_rptr) {
-        if (data != NULL)
-            freemsg(data);
-        return;
-    }
+    if (sunslip_decode_byte(sl, c, &data))
+        sunslip_rx_frame(sl, data);
+}
+
+static void
+sunslip_rx_frame(sunslip_state_t *sl, mblk_t *data)
+{
+    mblk_t *proto;
+    dl_unitdata_ind_t *ind;
 
     if (sl->dlpi_rq == NULL || sl->dl_state != DL_IDLE ||
         !canputnext(sl->dlpi_rq)) {
@@ -810,4 +862,66 @@ sunslip_rx_frame(sunslip_state_t *sl)
     proto->b_cont = data;
     sl->ipackets++;
     putnext(sl->dlpi_rq, proto);
+}
+
+static int
+sunslip_codec_selftest(void)
+{
+    static const unsigned char plain[] = {
+        0x45, 0xc0, 0xdb, 0x00, 0xff
+    };
+    static const unsigned char wire[] = {
+        0x45, 0xdb, 0xdc, 0xdb, 0xdd, 0x00, 0xff, 0xc0
+    };
+    sunslip_state_t tst;
+    mblk_t *data, *enc, *frame;
+    unsigned char *p;
+    int i, ok;
+
+    bzero((caddr_t)&tst, sizeof (tst));
+    data = allocb(sizeof (plain), BPRI_MED);
+    if (data == NULL)
+        return (0);
+    for (i = 0; i < sizeof (plain); ++i)
+        *data->b_wptr++ = plain[i];
+
+    enc = sunslip_encode(data);
+    if (enc == NULL) {
+        freemsg(data);
+        return (0);
+    }
+
+    ok = ((enc->b_wptr - enc->b_rptr) == sizeof (wire));
+    p = enc->b_rptr;
+    for (i = 0; ok && i < sizeof (wire); ++i)
+        if (p[i] != wire[i])
+            ok = 0;
+
+    frame = NULL;
+    for (i = 0; ok && i < sizeof (wire); ++i) {
+        mblk_t *got = NULL;
+        if (sunslip_decode_byte(&tst, wire[i], &got))
+            frame = got;
+    }
+
+    if (ok && frame == NULL)
+        ok = 0;
+    if (ok && (frame->b_wptr - frame->b_rptr) != sizeof (plain))
+        ok = 0;
+    if (ok) {
+        p = frame->b_rptr;
+        for (i = 0; i < sizeof (plain); ++i)
+            if (p[i] != plain[i]) {
+                ok = 0;
+                break;
+            }
+    }
+
+    if (frame != NULL)
+        freemsg(frame);
+    if (tst.rx_mp != NULL)
+        freemsg(tst.rx_mp);
+    freemsg(enc);
+    freemsg(data);
+    return (ok);
 }
