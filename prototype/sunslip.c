@@ -16,6 +16,7 @@
 #include <sys/modctl.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
+#include <sys/sockio.h>
 #include <sys/stat.h>
 #include <sys/cmn_err.h>
 #include <sys/open.h>
@@ -298,13 +299,20 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             (long)(mp->b_cont != NULL ? msgdsize(mp->b_cont) : 0));
 
         /*
-         * Do not silently drop unknown ioctls.  STREAMS requires a
-         * bottom-level driver to ACK or NAK them; dropping one can leave
-         * the caller blocked waiting forever.  For now NAK and log the
-         * command so we can implement any ioctl Solaris IP actually needs.
+         * SIOCGTUNPARAM is an ifconfig probe for Solaris tunnel modules.
+         * SunSlip is not a tunnel provider.  Reject that probe as ENOTTY
+         * ("inappropriate ioctl for device") rather than EINVAL so userland
+         * can distinguish "not a tunnel" from a malformed request.
+         *
+         * Other unknown ioctls are also NAKed rather than silently dropped;
+         * a bottom-level STREAMS driver must always complete the ioctl.
          */
         mp->b_datap->db_type = M_IOCNAK;
+#ifdef SIOCGTUNPARAM
+        ioc->ioc_error = (ioc->ioc_cmd == SIOCGTUNPARAM) ? ENOTTY : EINVAL;
+#else
         ioc->ioc_error = EINVAL;
+#endif
         ioc->ioc_rval = -1;
         ioc->ioc_count = 0;
         if (mp->b_cont != NULL) {
