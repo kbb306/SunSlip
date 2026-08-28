@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <string.h>
+#include <errno.h>
 #include <termios.h>
 #include <stropts.h>
 #include <sys/ioctl.h>
@@ -21,7 +23,27 @@ int main(int argc, char **argv)
     if (argc > 1) dev = argv[1];
     fd = open(dev, O_RDWR | O_NOCTTY);
     if (fd < 0) die("open tty");
-    if (tcgetattr(fd, &t) < 0) die("tcgetattr");
+    if (tcgetattr(fd, &t) < 0) {
+        /*
+         * On pre-Solaris-11.4 /dev/pts slaves opened by a non-XPG4
+         * program may not have terminal-emulation modules pushed
+         * automatically.  ptem supplies the terminal ioctls and ldterm
+         * supplies the line discipline.  Add them only for PTY test
+         * endpoints, never for real /dev/term/* hardware.
+         */
+        if (strncmp(dev, "/dev/pts/", 9) == 0 && errno == EINVAL) {
+            if (ioctl(fd, I_FIND, "ptem") == 0 &&
+                ioctl(fd, I_PUSH, "ptem") < 0)
+                die("I_PUSH ptem");
+            if (ioctl(fd, I_FIND, "ldterm") == 0 &&
+                ioctl(fd, I_PUSH, "ldterm") < 0)
+                die("I_PUSH ldterm");
+            if (tcgetattr(fd, &t) < 0)
+                die("tcgetattr after PTY setup");
+        } else {
+            die("tcgetattr");
+        }
+    }
 
     t.c_iflag = 0;
     t.c_oflag = 0;
