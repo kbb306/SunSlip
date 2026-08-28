@@ -16,7 +16,6 @@
 #include <sys/modctl.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
-#include <sys/sockio.h>
 #include <sys/stat.h>
 #include <sys/cmn_err.h>
 #include <sys/open.h>
@@ -30,6 +29,14 @@
 #define SUNSLIP_MTU        1006
 #define SUNSLIP_HIWAT      4096
 #define SUNSLIP_LOWAT      1024
+
+/*
+ * Solaris 8 SIOCGTUNPARAM.  Avoid including <sys/sockio.h> in the
+ * kernel module solely for this probe: that macro expands through
+ * sizeof(struct iftun_req), whose complete definition is not pulled
+ * into this compilation context.
+ */
+#define SUNSLIP_SIOCGTUNPARAM  0x40506993U
 
 #define SL_END             0xc0
 #define SL_ESC             0xdb
@@ -308,11 +315,9 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
          * a bottom-level STREAMS driver must always complete the ioctl.
          */
         mp->b_datap->db_type = M_IOCNAK;
-#ifdef SIOCGTUNPARAM
-        ioc->ioc_error = (ioc->ioc_cmd == SIOCGTUNPARAM) ? ENOTTY : EINVAL;
-#else
-        ioc->ioc_error = EINVAL;
-#endif
+        ioc->ioc_error =
+            ((unsigned int)ioc->ioc_cmd == SUNSLIP_SIOCGTUNPARAM) ?
+            ENOTTY : EINVAL;
         ioc->ioc_rval = -1;
         ioc->ioc_count = 0;
         if (mp->b_cont != NULL) {
