@@ -102,6 +102,15 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo "Running PTY end-to-end diagnostic..."
+./ptysliptest
+if [ $? -ne 0 ]; then
+    echo "WARNING: PTY end-to-end diagnostic failed."
+    echo "The driver remains installed; this may indicate a PTY-specific issue."
+else
+    echo "PTY end-to-end diagnostic passed."
+fi
+
 echo ""
 echo "Next:"
 echo "  cd prototype"
