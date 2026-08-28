@@ -68,6 +68,7 @@ static int sunslip_twput(queue_t *, mblk_t *);
 static void sunslip_info_ack(queue_t *, mblk_t *);
 static void sunslip_bind(queue_t *, mblk_t *);
 static void sunslip_unbind(queue_t *, mblk_t *);
+static void sunslip_phys_addr(queue_t *, mblk_t *);
 static void sunslip_ok_ack(queue_t *, mblk_t *, t_uscalar_t);
 static void sunslip_error_ack(queue_t *, mblk_t *, t_uscalar_t,
     t_uscalar_t, t_uscalar_t);
@@ -295,6 +296,9 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         case DL_UNBIND_REQ:
             sunslip_unbind(q, mp);
             break;
+        case DL_PHYS_ADDR_REQ:
+            sunslip_phys_addr(q, mp);
+            break;
         case DL_UNITDATA_REQ:
             if (((sunslip_state_t *)q->q_ptr)->dl_state != DL_IDLE) {
                 sunslip_error_ack(q, mp, prim, DL_OUTSTATE, 0);
@@ -418,6 +422,45 @@ sunslip_unbind(queue_t *q, mblk_t *mp)
     sl->dl_state = DL_UNBOUND;
     sl->sap = 0;
     sunslip_ok_ack(q, mp, DL_UNBIND_REQ);
+}
+
+static void
+sunslip_phys_addr(queue_t *q, mblk_t *mp)
+{
+    dl_phys_addr_req_t *req;
+    dl_phys_addr_ack_t *ack;
+    mblk_t *nmp;
+
+    if ((mp->b_wptr - mp->b_rptr) < DL_PHYS_ADDR_REQ_SIZE) {
+        sunslip_error_ack(q, mp, DL_PHYS_ADDR_REQ, DL_BADPRIM, 0);
+        return;
+    }
+
+    req = (dl_phys_addr_req_t *)mp->b_rptr;
+    if (req->dl_addr_type != DL_CURR_PHYS_ADDR &&
+        req->dl_addr_type != DL_FACT_PHYS_ADDR) {
+        sunslip_error_ack(q, mp, DL_PHYS_ADDR_REQ, DL_NOTSUPPORTED, 0);
+        return;
+    }
+
+    freemsg(mp);
+
+    /*
+     * SLIP has no link-layer/physical address.  Return a valid ACK with
+     * zero address length rather than inventing Ethernet-like semantics.
+     */
+    nmp = allocb(DL_PHYS_ADDR_ACK_SIZE, BPRI_MED);
+    if (nmp == NULL)
+        return;
+
+    nmp->b_datap->db_type = M_PCPROTO;
+    ack = (dl_phys_addr_ack_t *)nmp->b_wptr;
+    bzero((caddr_t)ack, sizeof (*ack));
+    ack->dl_primitive = DL_PHYS_ADDR_ACK;
+    ack->dl_addr_length = 0;
+    ack->dl_addr_offset = 0;
+    nmp->b_wptr += sizeof (*ack);
+    qreply(q, nmp);
 }
 
 static void
