@@ -185,7 +185,7 @@ sunslip_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **result)
         *result = sunslip_dip;
         return (DDI_SUCCESS);
     case DDI_INFO_DEVT2INSTANCE:
-        *result = (void *)(long)getminor(dev);
+        *result = (void *)(long)(getminor(dev) - 1);
         return (DDI_SUCCESS);
     default:
         return (DDI_FAILURE);
@@ -198,7 +198,7 @@ sunslip_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
     if (cmd != DDI_ATTACH || ddi_get_instance(dip) != 0)
         return (DDI_FAILURE);
 
-    if (ddi_create_minor_node(dip, "sunslip0", S_IFCHR, 0,
+    if (ddi_create_minor_node(dip, "sunslip0", S_IFCHR, 1,
         DDI_PSEUDO, 0) != DDI_SUCCESS)
         return (DDI_FAILURE);
 
@@ -227,7 +227,7 @@ sunslip_dlopen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
     (void)oflag;
     (void)crp;
 
-    if (sflag == MODOPEN || getminor(*devp) != 0)
+    if (sflag == MODOPEN || getminor(*devp) != 1)
         return (EINVAL);
     if (sunslip0.dlpi_rq != NULL && sunslip0.dlpi_rq != rq)
         return (EBUSY);
