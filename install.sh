@@ -7,7 +7,7 @@
 #     ./install.sh
 #
 
-PROTO="./prototype"
+SRC="./src"
 PKGDIR="./packaging/sunos8"
 BUILDLOG="/tmp/sunslip-build.log"
 DRV64="/usr/kernel/drv/sparcv9/sunslip"
@@ -22,7 +22,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if [ ! -d "$PROTO" ] || [ ! -f "$PKGDIR/sunslip.init" ]; then
+if [ ! -d "$SRC" ] || [ ! -f "$PKGDIR/sunslip.init" ]; then
     echo "ERROR: run install.sh from the SunSlip repository root."
     exit 1
 fi
@@ -73,7 +73,7 @@ rm -f /usr/kernel/drv/sunslip.conf
 rm -f /tmp/sunslip
 
 echo "Building..."
-cd "$PROTO" || exit 1
+cd "$SRC" || exit 1
 rm -f "$BUILDLOG"
 
 /usr/ccs/bin/make clean >"$BUILDLOG" 2>&1

@@ -14,7 +14,7 @@ This branch adds a persistent installation layout for real SunSlip use.
   `/etc/rc2.d/K20sunslip`
 
 The installer still creates `/dev/sunslip0` explicitly because Solaris 8
-`devfsadm` does not currently create that friendly link for this prototype
+`devfsadm` does not currently create that friendly link for the SunSlip
 driver.
 
 ## Install
