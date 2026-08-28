@@ -309,6 +309,8 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             }
             break;
         default:
+            cmn_err(CE_NOTE, "sunslip0: unsupported DLPI primitive 0x%lx",
+                (unsigned long)prim);
             sunslip_error_ack(q, mp, prim, DL_NOTSUPPORTED, 0);
             break;
         }
