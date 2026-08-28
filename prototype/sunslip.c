@@ -288,8 +288,14 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         }
 
         ioc = (struct iocblk *)mp->b_rptr;
-        cmn_err(CE_NOTE, "sunslip0: M_IOCTL cmd=0x%lx count=%ld",
-            (unsigned long)ioc->ioc_cmd, (long)ioc->ioc_count);
+        cmn_err(CE_NOTE,
+            "sunslip0: M_IOCTL cmd=0x%lx id=%u flag=0x%x model=0x%x count=0x%lx cont=%ld",
+            (unsigned long)(unsigned int)ioc->ioc_cmd,
+            (unsigned int)ioc->ioc_id,
+            (unsigned int)ioc->ioc_flag,
+            (unsigned int)(ioc->ioc_flag & IOC_MODELS),
+            (unsigned long)ioc->ioc_count,
+            (long)(mp->b_cont != NULL ? msgdsize(mp->b_cont) : 0));
 
         /*
          * Do not silently drop unknown ioctls.  STREAMS requires a
@@ -347,9 +353,19 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         }
         return (0);
 
+    case M_CTL:
+        cmn_err(CE_NOTE, "sunslip0: M_CTL len=%ld first=0x%lx",
+            (long)(mp->b_wptr - mp->b_rptr),
+            (unsigned long)((mp->b_wptr - mp->b_rptr) >=
+                sizeof (t_uscalar_t) ?
+                *(t_uscalar_t *)mp->b_rptr : 0));
+        freemsg(mp);
+        return (0);
+
     default:
-        cmn_err(CE_NOTE, "sunslip0: unexpected STREAMS message type 0x%x",
-            (unsigned int)mp->b_datap->db_type);
+        cmn_err(CE_NOTE, "sunslip0: unexpected STREAMS message type 0x%x len=%ld",
+            (unsigned int)mp->b_datap->db_type,
+            (long)(mp->b_wptr - mp->b_rptr));
         freemsg(mp);
         return (0);
     }
