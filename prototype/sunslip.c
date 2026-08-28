@@ -365,6 +365,11 @@ sunslip_info_ack(queue_t *q, mblk_t *mp)
     ack->dl_brdcst_addr_length = 0;
     ack->dl_brdcst_addr_offset = 0;
     ack->dl_growth = 0;
+    cmn_err(CE_NOTE,
+        "sunslip0: DL_INFO_ACK state=%lu style=%lu max_sdu=%lu",
+        (unsigned long)ack->dl_current_state,
+        (unsigned long)ack->dl_provider_style,
+        (unsigned long)ack->dl_max_sdu);
     nmp->b_wptr += sizeof (*ack);
     qreply(q, nmp);
 }
@@ -387,6 +392,11 @@ sunslip_bind(queue_t *q, mblk_t *mp)
     }
 
     req = (dl_bind_req_t *)mp->b_rptr;
+    cmn_err(CE_NOTE,
+        "sunslip0: DL_BIND_REQ sap=%lu service=0x%lx state=%lu",
+        (unsigned long)req->dl_sap,
+        (unsigned long)req->dl_service_mode,
+        (unsigned long)sl->dl_state);
     if ((req->dl_service_mode & DL_CLDLS) == 0) {
         sunslip_error_ack(q, mp, DL_BIND_REQ, DL_UNSUPPORTED, 0);
         return;
@@ -408,6 +418,10 @@ sunslip_bind(queue_t *q, mblk_t *mp)
     ack->dl_addr_offset = 0;
     ack->dl_max_conind = 0;
     ack->dl_xidtest_flg = 0;
+    cmn_err(CE_NOTE,
+        "sunslip0: DL_BIND_ACK sap=%lu newstate=%lu",
+        (unsigned long)ack->dl_sap,
+        (unsigned long)sl->dl_state);
     nmp->b_wptr += sizeof (*ack);
     qreply(q, nmp);
 }
