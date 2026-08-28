@@ -95,6 +95,13 @@ echo "Installed."
 modinfo | grep sunslip
 ls -l /dev/sunslip0
 
+echo "Running RFC1055 codec self-test..."
+./slipselftest
+if [ $? -ne 0 ]; then
+    echo "ERROR: SunSlip RFC1055 self-test failed."
+    exit 1
+fi
+
 echo ""
 echo "Next:"
 echo "  cd prototype"
