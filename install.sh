@@ -22,7 +22,7 @@
 PROTO="./prototype"
 BUILDLOG="/tmp/sunslip-build.log"
 
-if [ "`id -u`" != "0" ]; then
+if [ "`whoami`" != "root" ]; then
     echo "ERROR: run this script as root."
     exit 1
 fi
