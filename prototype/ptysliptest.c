@@ -34,9 +34,15 @@ wait_readable(int fd, int ms)
     struct pollfd p;
 
     p.fd = fd;
-    p.events = POLLIN;
+    /*
+     * DL_BIND_ACK and other DLPI acknowledgements may arrive as
+     * high-priority M_PCPROTO messages, which STREAMS poll reports
+     * as POLLPRI rather than POLLIN.  Accept either here.
+     */
+    p.events = POLLIN | POLLPRI;
     p.revents = 0;
-    return (poll(&p, 1, ms) > 0 && (p.revents & POLLIN));
+    return (poll(&p, 1, ms) > 0 &&
+        (p.revents & (POLLIN | POLLPRI)));
 }
 
 static int
