@@ -28,11 +28,9 @@ if [ ! -d "$SRC" ] || [ ! -f "$PKGDIR/sunslip.init" ]; then
 fi
 
 is_prototype=0
-if [ -L "$DRV64" ]; then
-    ls -l "$DRV64" 2>/dev/null | grep '/tmp/sunslip' >/dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        is_prototype=1
-    fi
+ls -l "$DRV64" 2>/dev/null | grep '/tmp/sunslip' >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+    is_prototype=1
 fi
 if [ -f /tmp/sunslip ]; then
     is_prototype=1
