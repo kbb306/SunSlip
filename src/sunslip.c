@@ -160,9 +160,13 @@ _init(void)
 
     bzero((caddr_t)&sunslip0, sizeof (sunslip0));
     sunslip0.dl_state = DL_UNBOUND;
+    cmn_err(CE_NOTE, "sunslip: _init state=0x%lx",
+        (unsigned long)&sunslip0);
     e = mod_install(&sunslip_modlinkage);
     if (e == 0)
-        cmn_err(CE_NOTE, "sunslip: driver and tty module installed");
+        cmn_err(CE_NOTE,
+            "sunslip: driver and tty module installed state=0x%lx",
+            (unsigned long)&sunslip0);
     return (e);
 }
 
@@ -250,7 +254,10 @@ sunslip_dlopen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
     sunslip0.dlpi_rq = rq;
     sunslip0.dl_state = DL_UNBOUND;
     qprocson(rq);
-    cmn_err(CE_NOTE, "sunslip0: DLPI stream opened");
+    cmn_err(CE_NOTE,
+        "sunslip0: DLPI stream opened state=0x%lx rq=0x%lx tty=0x%lx",
+        (unsigned long)&sunslip0, (unsigned long)rq,
+        (unsigned long)sunslip0.tty_rq);
     return (0);
 }
 
@@ -261,6 +268,10 @@ sunslip_dlclose(queue_t *rq, int flag, cred_t *crp)
     (void)flag;
     (void)crp;
 
+    cmn_err(CE_NOTE,
+        "sunslip0: DLPI stream closing state=0x%lx rq=0x%lx tty=0x%lx",
+        (unsigned long)sl, (unsigned long)rq,
+        (unsigned long)(sl != NULL ? sl->tty_rq : NULL));
     qprocsoff(rq);
     if (sl != NULL && sl->dlpi_rq == rq) {
         sl->dlpi_rq = NULL;
@@ -373,11 +384,11 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             break;
         case DL_UNITDATA_REQ:
             cmn_err(CE_NOTE,
-                "sunslip0: TX DL_UNITDATA_REQ payload=%ld state=%lu tty=%s",
+                "sunslip0: TX DL_UNITDATA_REQ payload=%ld dlstate=%lu statep=0x%lx tty=0x%lx",
                 (long)(mp->b_cont != NULL ? msgdsize(mp->b_cont) : 0),
                 (unsigned long)((sunslip_state_t *)q->q_ptr)->dl_state,
-                ((sunslip_state_t *)q->q_ptr)->tty_rq != NULL ?
-                "attached" : "missing");
+                (unsigned long)q->q_ptr,
+                (unsigned long)((sunslip_state_t *)q->q_ptr)->tty_rq);
             if (((sunslip_state_t *)q->q_ptr)->dl_state != DL_IDLE) {
                 sunslip_error_ack(q, mp, prim, DL_OUTSTATE, 0);
             } else if (mp->b_cont == NULL) {
@@ -723,7 +734,10 @@ sunslip_topen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
         sunslip0.rx_mp = NULL;
     }
     qprocson(rq);
-    cmn_err(CE_NOTE, "sunslip0: tty module pushed");
+    cmn_err(CE_NOTE,
+        "sunslip0: tty module pushed state=0x%lx rq=0x%lx dlpi=0x%lx",
+        (unsigned long)&sunslip0, (unsigned long)rq,
+        (unsigned long)sunslip0.dlpi_rq);
     return (0);
 }
 
@@ -734,6 +748,10 @@ sunslip_tclose(queue_t *rq, int flag, cred_t *crp)
     (void)flag;
     (void)crp;
 
+    cmn_err(CE_NOTE,
+        "sunslip0: tty module closing state=0x%lx rq=0x%lx dlpi=0x%lx",
+        (unsigned long)sl, (unsigned long)rq,
+        (unsigned long)(sl != NULL ? sl->dlpi_rq : NULL));
     qprocsoff(rq);
     if (sl != NULL && sl->tty_rq == rq) {
         sl->tty_rq = NULL;
