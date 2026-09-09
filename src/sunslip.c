@@ -719,8 +719,14 @@ sunslip_topen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
     (void)oflag;
     (void)crp;
 
-    if (sflag != MODOPEN)
-        return (EINVAL);
+    /*
+     * This qinit belongs exclusively to the pushable tty module, so the
+     * stream-open flag is diagnostic rather than a reason to reject I_PUSH.
+     * Solaris 8 may call this entry with a value other than MODOPEN.
+     */
+    cmn_err(CE_NOTE,
+        "sunslip0: tty module open requested sflag=%d MODOPEN=%d state=0x%lx rq=0x%lx",
+        sflag, MODOPEN, (unsigned long)&sunslip0, (unsigned long)rq);
     if (sunslip0.tty_rq != NULL && sunslip0.tty_rq != rq)
         return (EBUSY);
 
