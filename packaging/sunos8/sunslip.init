@@ -40,7 +40,8 @@ start_sunslip()
     echo "$pid" > "$PIDFILE"
 
     sleep 1
-    if ! kill -0 "$pid" 2>/dev/null; then
+    kill -0 "$pid" 2>/dev/null
+    if [ $? -ne 0 ]; then
         echo "sunslipattach failed; see $LOGFILE"
         rm -f "$PIDFILE"
         return 1
