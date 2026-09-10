@@ -18,10 +18,16 @@ int main(int argc, char **argv)
 {
     const char *dev = "/dev/term/b";
     int fd;
+    int flags;
     struct termios t;
 
     if (argc > 1) dev = argv[1];
-    fd = open(dev, O_RDWR | O_NOCTTY);
+    /*
+     * A real serial port may block open(2) until carrier detect is asserted.
+     * Open it nonblocking so CLOCAL can be established before waiting on the
+     * stream.  Restore normal blocking operation after configuring the tty.
+     */
+    fd = open(dev, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) die("open tty");
     if (tcgetattr(fd, &t) < 0) {
         /*
@@ -54,6 +60,11 @@ int main(int argc, char **argv)
     if (cfsetispeed(&t, B19200) < 0) die("cfsetispeed");
     if (cfsetospeed(&t, B19200) < 0) die("cfsetospeed");
     if (tcsetattr(fd, TCSANOW, &t) < 0) die("tcsetattr");
+
+    flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) die("fcntl F_GETFL");
+    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0)
+        die("fcntl F_SETFL");
 
     if (ioctl(fd, I_PUSH, "sunslip") < 0) die("I_PUSH sunslip");
 
