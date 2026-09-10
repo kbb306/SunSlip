@@ -17,11 +17,28 @@ static void die(const char *s) { perror(s); exit(1); }
 int main(int argc, char **argv)
 {
     const char *dev = "/dev/term/b";
+    const char *readyfile = NULL;
+    FILE *readyfp;
     int fd;
+    int flags;
     struct termios t;
 
     if (argc > 1) dev = argv[1];
-    fd = open(dev, O_RDWR | O_NOCTTY);
+    if (argc > 2) readyfile = argv[2];
+
+    /*
+     * Establish signal behavior before opening the tty.  This closes the
+     * startup window in which an init-shell SIGHUP could terminate us.
+     */
+    signal(SIGINT, stop);
+    signal(SIGTERM, stop);
+    signal(SIGHUP, SIG_IGN);
+    /*
+     * A real serial port may block open(2) until carrier detect is asserted.
+     * Open it nonblocking so CLOCAL can be established before waiting on the
+     * stream.  Restore normal blocking operation after configuring the tty.
+     */
+    fd = open(dev, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) die("open tty");
     if (tcgetattr(fd, &t) < 0) {
         /*
@@ -55,16 +72,33 @@ int main(int argc, char **argv)
     if (cfsetospeed(&t, B19200) < 0) die("cfsetospeed");
     if (tcsetattr(fd, TCSANOW, &t) < 0) die("tcsetattr");
 
+    flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) die("fcntl F_GETFL");
+    if (fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0)
+        die("fcntl F_SETFL");
+
     if (ioctl(fd, I_PUSH, "sunslip") < 0) die("I_PUSH sunslip");
+
+    /*
+     * Tell the service script that open, termios setup, and I_PUSH all
+     * completed.  Merely observing a live process is not sufficient because
+     * a serial open can block while waiting for modem-control state.
+     */
+    if (readyfile != NULL) {
+        readyfp = fopen(readyfile, "w");
+        if (readyfp == NULL) die("create ready file");
+        if (fprintf(readyfp, "%ld\n", (long)getpid()) < 0) {
+            (void)fclose(readyfp);
+            die("write ready file");
+        }
+        if (fclose(readyfp) != 0) die("close ready file");
+    }
 
     printf("SunSlip attached to %s at 19200 8N1; pid=%ld\n",
         dev, (long)getpid());
     printf("Leave this process running; interrupt it to detach.\n");
     fflush(stdout);
 
-    signal(SIGINT, stop);
-    signal(SIGTERM, stop);
-    signal(SIGHUP, stop);
     while (!done) pause();
 
     (void)ioctl(fd, I_POP, 0);
