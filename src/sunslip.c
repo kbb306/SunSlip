@@ -308,7 +308,7 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             return (0);
         }
 
-ioctl log        /*
+        /*
          * SIOCGTUNPARAM is an ifconfig probe for Solaris tunnel modules.
          * SunSlip is not a tunnel provider.  Reject that probe as ENOTTY
          * ("inappropriate ioctl for device") rather than EINVAL so userland
