@@ -1,4 +1,4 @@
-/* Keep /dev/term/b open with the sunslip STREAMS module pushed on it. */
+/* Keep a serial tty open with the sunslip STREAMS module pushed on it. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,17 +14,68 @@ static volatile sig_atomic_t done;
 static void stop(int sig) { (void)sig; done = 1; }
 static void die(const char *s) { perror(s); exit(1); }
 
+static int
+parse_speed(const char *s, speed_t *speedp)
+{
+    long baud;
+    char *end;
+
+    errno = 0;
+    baud = strtol(s, &end, 10);
+    if (errno != 0 || s == end || *end != '\0')
+        return (-1);
+
+    switch (baud) {
+    case 50:    *speedp = B50; break;
+    case 75:    *speedp = B75; break;
+    case 110:   *speedp = B110; break;
+    case 134:   *speedp = B134; break;
+    case 150:   *speedp = B150; break;
+    case 200:   *speedp = B200; break;
+    case 300:   *speedp = B300; break;
+    case 600:   *speedp = B600; break;
+    case 1200:  *speedp = B1200; break;
+    case 1800:  *speedp = B1800; break;
+    case 2400:  *speedp = B2400; break;
+    case 4800:  *speedp = B4800; break;
+    case 9600:  *speedp = B9600; break;
+    case 19200: *speedp = B19200; break;
+    case 38400: *speedp = B38400; break;
+#ifdef B57600
+    case 57600: *speedp = B57600; break;
+#endif
+#ifdef B76800
+    case 76800: *speedp = B76800; break;
+#endif
+#ifdef B115200
+    case 115200: *speedp = B115200; break;
+#endif
+    default:
+        return (-1);
+    }
+    return (0);
+}
+
 int main(int argc, char **argv)
 {
     const char *dev = "/dev/term/b";
     const char *readyfile = NULL;
+    const char *speedstr = "19200";
     FILE *readyfp;
     int fd;
     int flags;
+    speed_t speed;
     struct termios t;
 
     if (argc > 1) dev = argv[1];
     if (argc > 2) readyfile = argv[2];
+    if (argc > 3) speedstr = argv[3];
+
+    if (parse_speed(speedstr, &speed) < 0) {
+        fprintf(stderr, "Unsupported serial speed: %s\n", speedstr);
+        fprintf(stderr, "Use a standard termios baud rate such as 300, 1200, 2400, 4800, 9600, 19200, or 38400.\n");
+        return (2);
+    }
 
     /*
      * Establish signal behavior before opening the tty.  This closes the
@@ -68,8 +119,8 @@ int main(int argc, char **argv)
     t.c_cflag = CS8 | CREAD | CLOCAL;
     t.c_cc[VMIN] = 1;
     t.c_cc[VTIME] = 0;
-    if (cfsetispeed(&t, B19200) < 0) die("cfsetispeed");
-    if (cfsetospeed(&t, B19200) < 0) die("cfsetospeed");
+    if (cfsetispeed(&t, speed) < 0) die("cfsetispeed");
+    if (cfsetospeed(&t, speed) < 0) die("cfsetospeed");
     if (tcsetattr(fd, TCSANOW, &t) < 0) die("tcsetattr");
 
     flags = fcntl(fd, F_GETFL, 0);
@@ -94,8 +145,8 @@ int main(int argc, char **argv)
         if (fclose(readyfp) != 0) die("close ready file");
     }
 
-    printf("SunSlip attached to %s at 19200 8N1; pid=%ld\n",
-        dev, (long)getpid());
+    printf("SunSlip attached to %s at %s 8N1; pid=%ld\n",
+        dev, speedstr, (long)getpid());
     printf("Leave this process running; interrupt it to detach.\n");
     fflush(stdout);
 
