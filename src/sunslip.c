@@ -383,12 +383,6 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             sunslip_phys_addr(q, mp);
             break;
         case DL_UNITDATA_REQ:
-            cmn_err(CE_NOTE,
-                "sunslip0: TX DL_UNITDATA_REQ payload=%ld dlstate=%lu statep=0x%lx tty=0x%lx",
-                (long)(mp->b_cont != NULL ? msgdsize(mp->b_cont) : 0),
-                (unsigned long)((sunslip_state_t *)q->q_ptr)->dl_state,
-                (unsigned long)q->q_ptr,
-                (unsigned long)((sunslip_state_t *)q->q_ptr)->tty_rq);
             if (((sunslip_state_t *)q->q_ptr)->dl_state != DL_IDLE) {
                 sunslip_error_ack(q, mp, prim, DL_OUTSTATE, 0);
             } else if (mp->b_cont == NULL) {
@@ -674,7 +668,10 @@ sunslip_xmit(sunslip_state_t *sl, mblk_t *mp)
     size_t wire_len;
 
     if (sl->tty_rq == NULL) {
-        cmn_err(CE_NOTE, "sunslip0: TX drop: tty module missing");
+        if (sl->oerrors == 0)
+            cmn_err(CE_NOTE,
+                "sunslip0: TX drop: tty module missing state=0x%lx",
+                (unsigned long)sl);
         sl->oerrors++;
         freemsg(mp);
         return (1);
@@ -704,9 +701,10 @@ sunslip_xmit(sunslip_state_t *sl, mblk_t *mp)
 
     wire_len = msgdsize(out);
     sl->opackets++;
-    cmn_err(CE_NOTE,
-        "sunslip0: TX sending payload=%ld wire=%ld packet=%lu",
-        (long)len, (long)wire_len, sl->opackets);
+    if (sl->opackets <= 3)
+        cmn_err(CE_NOTE,
+            "sunslip0: TX sending payload=%ld wire=%ld packet=%lu",
+            (long)len, (long)wire_len, sl->opackets);
     putnext(WR(sl->tty_rq), out);
     freemsg(mp);
     return (1);
@@ -793,10 +791,11 @@ sunslip_trput(queue_t *q, mblk_t *mp)
     }
 
     wire_len = msgdsize(mp);
-    cmn_err(CE_NOTE,
-        "sunslip0: RX serial M_DATA bytes=%ld first=0x%x",
-        (long)wire_len,
-        wire_len != 0 ? (unsigned int)*mp->b_rptr : 0);
+    if (sl->ipackets < 3)
+        cmn_err(CE_NOTE,
+            "sunslip0: RX serial M_DATA bytes=%ld first=0x%x",
+            (long)wire_len,
+            wire_len != 0 ? (unsigned int)*mp->b_rptr : 0);
     for (bp = mp; bp != NULL; bp = bp->b_cont) {
         unsigned char *p;
         for (p = bp->b_rptr; p < bp->b_wptr; ++p)
@@ -888,10 +887,11 @@ sunslip_rx_frame(sunslip_state_t *sl, mblk_t *data)
     size_t len;
 
     len = msgdsize(data);
-    cmn_err(CE_NOTE,
-        "sunslip0: RX completed SLIP frame bytes=%ld state=%lu dlpi=%s",
-        (long)len, (unsigned long)sl->dl_state,
-        sl->dlpi_rq != NULL ? "attached" : "missing");
+    if (sl->ipackets < 3)
+        cmn_err(CE_NOTE,
+            "sunslip0: RX completed SLIP frame bytes=%ld state=%lu dlpi=%s",
+            (long)len, (unsigned long)sl->dl_state,
+            sl->dlpi_rq != NULL ? "attached" : "missing");
 
     if (sl->dlpi_rq == NULL || sl->dl_state != DL_IDLE ||
         !canputnext(sl->dlpi_rq)) {
@@ -924,9 +924,10 @@ sunslip_rx_frame(sunslip_state_t *sl, mblk_t *data)
     proto->b_wptr += sizeof (*ind);
     proto->b_cont = data;
     sl->ipackets++;
-    cmn_err(CE_NOTE,
-        "sunslip0: RX delivering frame bytes=%ld packet=%lu to IP",
-        (long)len, sl->ipackets);
+    if (sl->ipackets <= 3)
+        cmn_err(CE_NOTE,
+            "sunslip0: RX delivering frame bytes=%ld packet=%lu to IP",
+            (long)len, sl->ipackets);
     putnext(sl->dlpi_rq, proto);
 }
 
