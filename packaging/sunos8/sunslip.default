@@ -1,4 +1,5 @@
 # SunSlip service configuration
 TTY=/dev/term/b
+SPEED=19200
 LOCAL_ADDR=10.23.24.1
 REMOTE_ADDR=10.23.24.2
