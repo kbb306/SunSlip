@@ -9,6 +9,7 @@ This branch adds a persistent installation layout for real SunSlip use.
 - attach helper: `/usr/local/sbin/sunslipattach`
 - service script: `/etc/init.d/sunslip`
 - service defaults: `/etc/default/sunslip`
+- optional compatibility override: `/etc/sunslip.default`
 - start link: `/etc/rc3.d/S99sunslip`
 - stop links: `/etc/rc0.d/K20sunslip`, `/etc/rc1.d/K20sunslip`,
   `/etc/rc2.d/K20sunslip`
@@ -38,8 +39,19 @@ Review:
 Default configuration:
 
     TTY=/dev/term/b
+    SPEED=19200
     LOCAL_ADDR=10.23.24.1
     REMOTE_ADDR=10.23.24.2
+
+`SPEED` is passed to `sunslipattach` and controls both input and output baud.
+The attach helper validates the requested value and rejects unsupported
+termios rates instead of silently falling back to another speed.
+
+For convenience, `/etc/sunslip.default` is also read if present.  Values in
+that file override `/etc/default/sunslip`, so an installation using the
+alternate filename can set, for example:
+
+    SPEED=9600
 
 Then start:
 
@@ -61,4 +73,5 @@ Run:
     ./uninstall.sh
 
 The uninstaller stops the service, removes the driver and rc links, and leaves
-`/etc/default/sunslip` in place so local addressing choices are preserved.
+`/etc/default/sunslip` in place so local addressing and serial choices are
+preserved.
