@@ -17,11 +17,22 @@ static void die(const char *s) { perror(s); exit(1); }
 int main(int argc, char **argv)
 {
     const char *dev = "/dev/term/b";
+    const char *readyfile = NULL;
+    FILE *readyfp;
     int fd;
     int flags;
     struct termios t;
 
     if (argc > 1) dev = argv[1];
+    if (argc > 2) readyfile = argv[2];
+
+    /*
+     * Establish signal behavior before opening the tty.  This closes the
+     * startup window in which an init-shell SIGHUP could terminate us.
+     */
+    signal(SIGINT, stop);
+    signal(SIGTERM, stop);
+    signal(SIGHUP, SIG_IGN);
     /*
      * A real serial port may block open(2) until carrier detect is asserted.
      * Open it nonblocking so CLOCAL can be established before waiting on the
@@ -68,19 +79,26 @@ int main(int argc, char **argv)
 
     if (ioctl(fd, I_PUSH, "sunslip") < 0) die("I_PUSH sunslip");
 
+    /*
+     * Tell the service script that open, termios setup, and I_PUSH all
+     * completed.  Merely observing a live process is not sufficient because
+     * a serial open can block while waiting for modem-control state.
+     */
+    if (readyfile != NULL) {
+        readyfp = fopen(readyfile, "w");
+        if (readyfp == NULL) die("create ready file");
+        if (fprintf(readyfp, "%ld\n", (long)getpid()) < 0) {
+            (void)fclose(readyfp);
+            die("write ready file");
+        }
+        if (fclose(readyfp) != 0) die("close ready file");
+    }
+
     printf("SunSlip attached to %s at 19200 8N1; pid=%ld\n",
         dev, (long)getpid());
     printf("Leave this process running; interrupt it to detach.\n");
     fflush(stdout);
 
-    signal(SIGINT, stop);
-    signal(SIGTERM, stop);
-    /*
-     * The Solaris 8 Bourne shell may send SIGHUP to background children
-     * when an init script exits.  The serial stream must remain open after
-     * service startup; SIGTERM remains the service-controlled detach path.
-     */
-    signal(SIGHUP, SIG_IGN);
     while (!done) pause();
 
     (void)ioctl(fd, I_POP, 0);
