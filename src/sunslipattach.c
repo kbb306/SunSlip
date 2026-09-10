@@ -64,7 +64,12 @@ int main(int argc, char **argv)
 
     signal(SIGINT, stop);
     signal(SIGTERM, stop);
-    signal(SIGHUP, stop);
+    /*
+     * The Solaris 8 Bourne shell may send SIGHUP to background children
+     * when an init script exits.  The serial stream must remain open after
+     * service startup; SIGTERM remains the service-controlled detach path.
+     */
+    signal(SIGHUP, SIG_IGN);
     while (!done) pause();
 
     (void)ioctl(fd, I_POP, 0);
