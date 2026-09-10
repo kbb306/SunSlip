@@ -7,7 +7,6 @@ PATH=/usr/sbin:/usr/bin:/usr/local/sbin
 export PATH
 
 DEFAULTS=/etc/default/sunslip
-ALT_DEFAULTS=/etc/sunslip.default
 PIDFILE=/var/run/sunslipattach.pid
 LOGFILE=/var/adm/sunslip.log
 
@@ -18,11 +17,6 @@ REMOTE_ADDR=10.23.24.2
 
 if [ -r "$DEFAULTS" ]; then
     . "$DEFAULTS"
-fi
-
-# Compatibility/convenience override for installations using this filename.
-if [ -r "$ALT_DEFAULTS" ]; then
-    . "$ALT_DEFAULTS"
 fi
 
 start_sunslip()
