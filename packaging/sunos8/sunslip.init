@@ -35,14 +35,32 @@ start_sunslip()
     fi
 
     echo "Starting SunSlip on $TTY..."
-    /usr/local/sbin/sunslipattach "$TTY" >>"$LOGFILE" 2>&1 &
-    pid=$!
-    echo "$pid" > "$PIDFILE"
+    rm -f "$PIDFILE"
+    /usr/local/sbin/sunslipattach "$TTY" "$PIDFILE" >>"$LOGFILE" 2>&1 &
+    child_pid=$!
 
-    sleep 1
-    kill -0 "$pid" 2>/dev/null
-    if [ $? -ne 0 ]; then
-        echo "sunslipattach failed; see $LOGFILE"
+    tries=0
+    while [ ! -s "$PIDFILE" ] && [ "$tries" -lt 10 ]
+    do
+        kill -0 "$child_pid" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            break
+        fi
+        sleep 1
+        tries=`expr "$tries" + 1`
+    done
+
+    if [ ! -s "$PIDFILE" ]; then
+        echo "sunslipattach failed or did not become ready; see $LOGFILE"
+        kill "$child_pid" 2>/dev/null
+        rm -f "$PIDFILE"
+        return 1
+    fi
+
+    pid=`cat "$PIDFILE" 2>/dev/null`
+    if [ "$pid" != "$child_pid" ]; then
+        echo "sunslipattach readiness PID mismatch; see $LOGFILE"
+        kill "$child_pid" 2>/dev/null
         rm -f "$PIDFILE"
         return 1
     fi
