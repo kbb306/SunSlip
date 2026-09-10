@@ -17,7 +17,6 @@
 #include <sys/stream.h>
 #include <sys/stropts.h>
 #include <sys/stat.h>
-#include <sys/cmn_err.h>
 #include <sys/open.h>
 #include <sys/cred.h>
 #include <sys/sysmacros.h>
@@ -160,13 +159,7 @@ _init(void)
 
     bzero((caddr_t)&sunslip0, sizeof (sunslip0));
     sunslip0.dl_state = DL_UNBOUND;
-    cmn_err(CE_NOTE, "sunslip: _init state=0x%lx",
-        (unsigned long)&sunslip0);
     e = mod_install(&sunslip_modlinkage);
-    if (e == 0)
-        cmn_err(CE_NOTE,
-            "sunslip: driver and tty module installed state=0x%lx",
-            (unsigned long)&sunslip0);
     return (e);
 }
 
@@ -178,8 +171,6 @@ _fini(void)
     if (sunslip0.dlpi_rq != NULL || sunslip0.tty_rq != NULL)
         return (EBUSY);
     e = mod_remove(&sunslip_modlinkage);
-    if (e == 0)
-        cmn_err(CE_NOTE, "sunslip: removed");
     return (e);
 }
 
@@ -221,7 +212,6 @@ sunslip_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
     sunslip_dip = dip;
     ddi_report_dev(dip);
-    cmn_err(CE_NOTE, "sunslip0: attached");
     return (DDI_SUCCESS);
 }
 
@@ -254,10 +244,6 @@ sunslip_dlopen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
     sunslip0.dlpi_rq = rq;
     sunslip0.dl_state = DL_UNBOUND;
     qprocson(rq);
-    cmn_err(CE_NOTE,
-        "sunslip0: DLPI stream opened state=0x%lx rq=0x%lx tty=0x%lx",
-        (unsigned long)&sunslip0, (unsigned long)rq,
-        (unsigned long)sunslip0.tty_rq);
     return (0);
 }
 
@@ -268,10 +254,6 @@ sunslip_dlclose(queue_t *rq, int flag, cred_t *crp)
     (void)flag;
     (void)crp;
 
-    cmn_err(CE_NOTE,
-        "sunslip0: DLPI stream closing state=0x%lx rq=0x%lx tty=0x%lx",
-        (unsigned long)sl, (unsigned long)rq,
-        (unsigned long)(sl != NULL ? sl->tty_rq : NULL));
     qprocsoff(rq);
     if (sl != NULL && sl->dlpi_rq == rq) {
         sl->dlpi_rq = NULL;
@@ -305,7 +287,6 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
         struct iocblk *ioc;
 
         if ((mp->b_wptr - mp->b_rptr) < sizeof (struct iocblk)) {
-            cmn_err(CE_NOTE, "sunslip0: short M_IOCTL");
             freemsg(mp);
             return (0);
         }
@@ -323,22 +304,11 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             ioc->ioc_error = ok ? 0 : EIO;
             ioc->ioc_rval = ok ? 0 : -1;
             ioc->ioc_count = 0;
-            cmn_err(CE_NOTE, "sunslip0: RFC1055 codec self-test %s",
-                ok ? "PASS" : "FAIL");
             qreply(q, mp);
             return (0);
         }
 
-        cmn_err(CE_NOTE,
-            "sunslip0: M_IOCTL cmd=0x%lx id=%u flag=0x%x model=0x%x count=0x%lx cont=%ld",
-            (unsigned long)(unsigned int)ioc->ioc_cmd,
-            (unsigned int)ioc->ioc_id,
-            (unsigned int)ioc->ioc_flag,
-            (unsigned int)(ioc->ioc_flag & IOC_MODELS),
-            (unsigned long)ioc->ioc_count,
-            (long)(mp->b_cont != NULL ? msgdsize(mp->b_cont) : 0));
-
-        /*
+ioctl log        /*
          * SIOCGTUNPARAM is an ifconfig probe for Solaris tunnel modules.
          * SunSlip is not a tunnel provider.  Reject that probe as ENOTTY
          * ("inappropriate ioctl for device") rather than EINVAL so userland
@@ -392,26 +362,16 @@ sunslip_dlwput(queue_t *q, mblk_t *mp)
             }
             break;
         default:
-            cmn_err(CE_NOTE, "sunslip0: unsupported DLPI primitive 0x%lx",
-                (unsigned long)prim);
             sunslip_error_ack(q, mp, prim, DL_NOTSUPPORTED, 0);
             break;
         }
         return (0);
 
     case M_CTL:
-        cmn_err(CE_NOTE, "sunslip0: M_CTL len=%ld first=0x%lx",
-            (long)(mp->b_wptr - mp->b_rptr),
-            (unsigned long)((mp->b_wptr - mp->b_rptr) >=
-                sizeof (t_uscalar_t) ?
-                *(t_uscalar_t *)mp->b_rptr : 0));
         freemsg(mp);
         return (0);
 
     default:
-        cmn_err(CE_NOTE, "sunslip0: unexpected STREAMS message type 0x%x len=%ld",
-            (unsigned int)mp->b_datap->db_type,
-            (long)(mp->b_wptr - mp->b_rptr));
         freemsg(mp);
         return (0);
     }
@@ -460,11 +420,6 @@ sunslip_info_ack(queue_t *q, mblk_t *mp)
     ack->dl_brdcst_addr_length = 0;
     ack->dl_brdcst_addr_offset = 0;
     ack->dl_growth = 0;
-    cmn_err(CE_NOTE,
-        "sunslip0: DL_INFO_ACK state=%lu style=%lu max_sdu=%lu",
-        (unsigned long)ack->dl_current_state,
-        (unsigned long)ack->dl_provider_style,
-        (unsigned long)ack->dl_max_sdu);
     nmp->b_wptr += sizeof (*ack);
     qreply(q, nmp);
 }
@@ -487,11 +442,6 @@ sunslip_bind(queue_t *q, mblk_t *mp)
     }
 
     req = (dl_bind_req_t *)mp->b_rptr;
-    cmn_err(CE_NOTE,
-        "sunslip0: DL_BIND_REQ sap=%lu service=0x%lx state=%lu",
-        (unsigned long)req->dl_sap,
-        (unsigned long)req->dl_service_mode,
-        (unsigned long)sl->dl_state);
     if ((req->dl_service_mode & DL_CLDLS) == 0) {
         sunslip_error_ack(q, mp, DL_BIND_REQ, DL_UNSUPPORTED, 0);
         return;
@@ -513,10 +463,6 @@ sunslip_bind(queue_t *q, mblk_t *mp)
     ack->dl_addr_offset = 0;
     ack->dl_max_conind = 0;
     ack->dl_xidtest_flg = 0;
-    cmn_err(CE_NOTE,
-        "sunslip0: DL_BIND_ACK sap=%lu newstate=%lu",
-        (unsigned long)ack->dl_sap,
-        (unsigned long)sl->dl_state);
     nmp->b_wptr += sizeof (*ack);
     qreply(q, nmp);
 }
@@ -665,46 +611,27 @@ sunslip_xmit(sunslip_state_t *sl, mblk_t *mp)
 {
     mblk_t *out;
     size_t len;
-    size_t wire_len;
 
     if (sl->tty_rq == NULL) {
-        if (sl->oerrors == 0)
-            cmn_err(CE_NOTE,
-                "sunslip0: TX drop: tty module missing state=0x%lx",
-                (unsigned long)sl);
         sl->oerrors++;
         freemsg(mp);
         return (1);
     }
-    if (!canputnext(WR(sl->tty_rq))) {
-        cmn_err(CE_NOTE, "sunslip0: TX blocked by tty flow control");
+    if (!canputnext(WR(sl->tty_rq)))
         return (0);
-    }
 
     len = msgdsize(mp->b_cont);
     if (len > SUNSLIP_MTU) {
-        cmn_err(CE_NOTE,
-            "sunslip0: TX drop: payload=%ld exceeds mtu=%d",
-            (long)len, SUNSLIP_MTU);
         sl->oerrors++;
         freemsg(mp);
         return (1);
     }
 
     out = sunslip_encode(mp->b_cont);
-    if (out == NULL) {
-        cmn_err(CE_NOTE,
-            "sunslip0: TX encode/allocation failed payload=%ld",
-            (long)len);
+    if (out == NULL)
         return (0);
-    }
 
-    wire_len = msgdsize(out);
     sl->opackets++;
-    if (sl->opackets <= 3)
-        cmn_err(CE_NOTE,
-            "sunslip0: TX sending payload=%ld wire=%ld packet=%lu",
-            (long)len, (long)wire_len, sl->opackets);
     putnext(WR(sl->tty_rq), out);
     freemsg(mp);
     return (1);
@@ -718,13 +645,10 @@ sunslip_topen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
     (void)crp;
 
     /*
-     * This qinit belongs exclusively to the pushable tty module, so the
-     * stream-open flag is diagnostic rather than a reason to reject I_PUSH.
-     * Solaris 8 may call this entry with a value other than MODOPEN.
+     * This qinit belongs exclusively to the pushable tty module.  Solaris 8
+     * supplies MODOPEN here, but no flag check is needed for this qinit.
      */
-    cmn_err(CE_NOTE,
-        "sunslip0: tty module open requested sflag=%d MODOPEN=%d state=0x%lx rq=0x%lx",
-        sflag, MODOPEN, (unsigned long)&sunslip0, (unsigned long)rq);
+    (void)sflag;
     if (sunslip0.tty_rq != NULL && sunslip0.tty_rq != rq)
         return (EBUSY);
 
@@ -738,10 +662,6 @@ sunslip_topen(queue_t *rq, dev_t *devp, int oflag, int sflag, cred_t *crp)
         sunslip0.rx_mp = NULL;
     }
     qprocson(rq);
-    cmn_err(CE_NOTE,
-        "sunslip0: tty module pushed state=0x%lx rq=0x%lx dlpi=0x%lx",
-        (unsigned long)&sunslip0, (unsigned long)rq,
-        (unsigned long)sunslip0.dlpi_rq);
     return (0);
 }
 
@@ -752,10 +672,6 @@ sunslip_tclose(queue_t *rq, int flag, cred_t *crp)
     (void)flag;
     (void)crp;
 
-    cmn_err(CE_NOTE,
-        "sunslip0: tty module closing state=0x%lx rq=0x%lx dlpi=0x%lx",
-        (unsigned long)sl, (unsigned long)rq,
-        (unsigned long)(sl != NULL ? sl->dlpi_rq : NULL));
     qprocsoff(rq);
     if (sl != NULL && sl->tty_rq == rq) {
         sl->tty_rq = NULL;
@@ -783,19 +699,11 @@ sunslip_trput(queue_t *q, mblk_t *mp)
 {
     sunslip_state_t *sl = (sunslip_state_t *)q->q_ptr;
     mblk_t *bp;
-    size_t wire_len;
-
     if (mp->b_datap->db_type != M_DATA) {
         putnext(q, mp);
         return (0);
     }
 
-    wire_len = msgdsize(mp);
-    if (sl->ipackets < 3)
-        cmn_err(CE_NOTE,
-            "sunslip0: RX serial M_DATA bytes=%ld first=0x%x",
-            (long)wire_len,
-            wire_len != 0 ? (unsigned int)*mp->b_rptr : 0);
     for (bp = mp; bp != NULL; bp = bp->b_cont) {
         unsigned char *p;
         for (p = bp->b_rptr; p < bp->b_wptr; ++p)
@@ -884,22 +792,8 @@ sunslip_rx_frame(sunslip_state_t *sl, mblk_t *data)
 {
     mblk_t *proto;
     dl_unitdata_ind_t *ind;
-    size_t len;
-
-    len = msgdsize(data);
-    if (sl->ipackets < 3)
-        cmn_err(CE_NOTE,
-            "sunslip0: RX completed SLIP frame bytes=%ld state=%lu dlpi=%s",
-            (long)len, (unsigned long)sl->dl_state,
-            sl->dlpi_rq != NULL ? "attached" : "missing");
-
     if (sl->dlpi_rq == NULL || sl->dl_state != DL_IDLE ||
         !canputnext(sl->dlpi_rq)) {
-        cmn_err(CE_NOTE,
-            "sunslip0: RX drop before IP: dlpi=%s state=%lu canput=%d",
-            sl->dlpi_rq != NULL ? "attached" : "missing",
-            (unsigned long)sl->dl_state,
-            sl->dlpi_rq != NULL ? canputnext(sl->dlpi_rq) : 0);
         sl->ierrors++;
         freemsg(data);
         return;
@@ -924,10 +818,6 @@ sunslip_rx_frame(sunslip_state_t *sl, mblk_t *data)
     proto->b_wptr += sizeof (*ind);
     proto->b_cont = data;
     sl->ipackets++;
-    if (sl->ipackets <= 3)
-        cmn_err(CE_NOTE,
-            "sunslip0: RX delivering frame bytes=%ld packet=%lu to IP",
-            (long)len, sl->ipackets);
     putnext(sl->dlpi_rq, proto);
 }
 
